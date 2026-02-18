@@ -26,6 +26,13 @@ Transcribe audio/video from Google Drive using **ffmpeg silence-detection + spea
 
 This eliminates the hallucination problem in silence-heavy audio (e.g., phone calls with 70%+ silence) and significantly reduces processing time by skipping silent regions.
 
+## Mode Check
+
+**Before executing, read `/home/kino/.openclaw/workspace/asr_config.json`.**
+- If `"mode": "speaches"` → proceed with this skill
+- If `"mode": "whisperx"` → use the `gfile-asr-whisperx` skill instead
+- User can switch modes with `/asrmode`
+
 ## Trigger Conditions
 
 Activate when ANY of the following are true:
@@ -58,20 +65,19 @@ sudo docker compose -f /opt/docker/docker-compose.yml up -d speaches
 gdown "https://drive.google.com/uc?id={FILE_ID}" -O /home/kino/asr/{filename}
 ```
 
-### Step 2: Run Optimized Transcription (Silero VAD + speaches API)
+### Step 2: Run Smart Transcription (ffmpeg silencedetect + speaches API)
 
 ```bash
-/home/kino/asr/.venv/bin/python3 "${SKILL_DIR}/scripts/transcribe_optimized.py" \
+python3 "${SKILL_DIR}/scripts/transcribe_smart.py" \
     /home/kino/asr/{filename} --lang zh --format srt
 ```
 
-**IMPORTANT: Use the venv Python** (`/home/kino/asr/.venv/bin/python3`) because it has `silero-vad`, `torch`, and `faster-whisper` installed.
-
 The script handles everything automatically:
 - Detects file type (audio/video), converts to WAV if needed (ffmpeg)
-- **Silero VAD** finds precise speech segments (threshold=0.3, handles silence-heavy audio)
-- Merges nearby speech into chunks (max 5 min, 2s gap tolerance)
-- Sends only speech chunks to speaches API (skips silence → no hallucinations)
+- **ffmpeg silencedetect** with adaptive thresholds detects silence boundaries
+- Smart chunking: speech-segment extraction for high-silence audio, split-at-silence for continuous audio
+- Sends chunks to speaches Docker API (faster-whisper large-v3-turbo, int8, CUDA)
+- Hallucination filtering (regex patterns for common Whisper artifacts)
 - Combines results with corrected timestamps into SRT
 
 ### Step 3: Report Results & Deliver via Telegram
@@ -127,6 +133,23 @@ The script handles everything automatically:
 | Language detection errors | Always specify `--lang zh` for Chinese content |
 | Docker needs sudo | Some environments require `sudo docker` |
 | Python venv required | Use `/home/kino/asr/.venv/bin/python3` (has torch, silero-vad, faster-whisper) |
+
+## /asrmode Command
+
+When user types `/asrmode`:
+
+1. Read `/home/kino/.openclaw/workspace/asr_config.json`
+2. Show current mode and options:
+   ```
+   目前 ASR 模式：speaches
+   
+   可用模式：
+   1️⃣ speaches — ffmpeg silencedetect + speaches Docker API (faster-whisper GPU)
+   2️⃣ whisperx — WhisperX 批次推理 + wav2vec2 對齊 + 說話者辨識
+   
+   輸入 1 或 2 切換模式
+   ```
+3. After user selects, update `asr_config.json` `"mode"` field and confirm
 
 ## References
 
