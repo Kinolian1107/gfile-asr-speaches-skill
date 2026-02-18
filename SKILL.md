@@ -19,13 +19,12 @@ Transcribe audio/video from Google Drive using **ffmpeg silence-detection + spea
 
 ## How It Works
 
-1. **ffmpeg silencedetect** finds silence boundaries with adaptive threshold (based on mean volume)
-2. Extracts speech segments and groups them into smart chunks (max 5 min each)
-3. Sends each chunk to **speaches Docker API** (faster-whisper large-v3-turbo, int8, CUDA)
-4. Filters hallucinated segments (repeated text, subtitle watermarks, etc.)
-5. Combines results with corrected timestamps into SRT
+1. **Silero VAD** (Voice Activity Detection) detects precise speech segments (threshold=0.3)
+2. Merges nearby speech into processing chunks (max 5 min each, with 2s gap tolerance)
+3. Sends only speech-containing chunks to **speaches Docker API** (faster-whisper large-v3-turbo, int8, CUDA)
+4. Combines results with corrected timestamps into SRT
 
-This eliminates the hallucination problem in silence-heavy audio (e.g., phone calls with 70%+ silence).
+This eliminates the hallucination problem in silence-heavy audio (e.g., phone calls with 70%+ silence) and significantly reduces processing time by skipping silent regions.
 
 ## Trigger Conditions
 
@@ -59,21 +58,21 @@ sudo docker compose -f /opt/docker/docker-compose.yml up -d speaches
 gdown "https://drive.google.com/uc?id={FILE_ID}" -O /home/kino/asr/{filename}
 ```
 
-### Step 2: Run Smart Transcription
+### Step 2: Run Optimized Transcription (Silero VAD + speaches API)
 
 ```bash
-python3 "${SKILL_DIR}/scripts/transcribe_smart.py" \
+/home/kino/asr/.venv/bin/python3 "${SKILL_DIR}/scripts/transcribe_optimized.py" \
     /home/kino/asr/{filename} --lang zh --format srt
 ```
 
+**IMPORTANT: Use the venv Python** (`/home/kino/asr/.venv/bin/python3`) because it has `silero-vad`, `torch`, and `faster-whisper` installed.
+
 The script handles everything automatically:
-- Detects file type (audio/video)
-- Converts to WAV if needed (ffmpeg)
-- Uses ffmpeg silencedetect with adaptive threshold to find speech segments
-- Groups speech segments into smart chunks (shorter for high-silence audio)
-- Sends chunks to speaches API
-- Filters hallucinated segments
-- Merges results into SRT with correct timestamps
+- Detects file type (audio/video), converts to WAV if needed (ffmpeg)
+- **Silero VAD** finds precise speech segments (threshold=0.3, handles silence-heavy audio)
+- Merges nearby speech into chunks (max 5 min, 2s gap tolerance)
+- Sends only speech chunks to speaches API (skips silence → no hallucinations)
+- Combines results with corrected timestamps into SRT
 
 ### Step 3: Report Results & Deliver via Telegram
 
@@ -110,7 +109,7 @@ The script handles everything automatically:
 | `SPEACHES_URL` | `http://localhost:18996` | speaches API endpoint |
 | `ASR_MODEL` | `deepdml/faster-whisper-large-v3-turbo-ct2` | Whisper model |
 | `ASR_DIR` | `/home/kino/asr` | Working directory |
-| `--max-chunk` | `300` | Max chunk seconds (auto-reduces for high-silence audio) |
+| `--format` | `srt` | Output format: srt, text, json, all |
 | `--lang` | `zh` | Language code (zh, en, ja, auto) |
 
 ## Supported Input
@@ -123,10 +122,11 @@ The script handles everything automatically:
 
 | Issue | Solution |
 |-------|----------|
-| VAD too aggressive on silence-heavy audio | Adaptive silence detection + speech-segment extraction |
-| Whisper hallucinations | Hallucination pattern filter + `temperature=0` + `condition_on_previous_text=false` |
+| VAD too aggressive on silence-heavy audio | Silero VAD (threshold=0.3) only sends speech segments |
+| Whisper hallucinations | `temperature=0` + `condition_on_previous_text=false` + silence skipping |
 | Language detection errors | Always specify `--lang zh` for Chinese content |
 | Docker needs sudo | Some environments require `sudo docker` |
+| Python venv required | Use `/home/kino/asr/.venv/bin/python3` (has torch, silero-vad, faster-whisper) |
 
 ## References
 
