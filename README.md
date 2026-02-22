@@ -1,6 +1,6 @@
-# gfile-asr-speaches-skill
+# openclaw-asr-speaches-skill
 
-> **⚠️ DEPRECATED** — This repo has been merged into [openclaw-local-asr](https://github.com/Kinolian1107/openclaw-local-asr).
+> **⚠️ DEPRECATED** — This repo has been merged into [openclaw-local-asr-skill](https://github.com/Kinolian1107/openclaw-local-asr-skill).
 > Please use the unified repo for all future updates. This repo is kept for reference only.
 
 [English](#english) | [中文](#中文)
